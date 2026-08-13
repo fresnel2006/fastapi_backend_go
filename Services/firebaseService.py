@@ -1,4 +1,5 @@
 import os
+import json
 from typing import List
 from dotenv import load_dotenv
 import firebase_admin
@@ -10,16 +11,27 @@ load_dotenv()
 
 class FirebaseService:
     def __init__(self):
-        cle_credentials_path = os.getenv("FIREBASE_CREDENTIALS_PATH")
+        credentials_json = os.getenv("FIREBASE_CREDENTIALS_JSON")
+        credentials_path = os.getenv("FIREBASE_CREDENTIALS_PATH")
         database_url = os.getenv("FIREBASE_DATABASE_URL")
 
-        if not cle_credentials_path or not database_url:
-            raise ValueError(
-                "FIREBASE_CREDENTIALS_PATH et FIREBASE_DATABASE_URL doivent être définis dans le .env"
-            )
+        if not database_url:
+            raise ValueError("FIREBASE_DATABASE_URL doit être défini")
 
         if not firebase_admin._apps:  # évite de réinitialiser si déjà fait
-            cred = credentials.Certificate(cle_credentials_path)
+            if credentials_json:
+                # Cas Vercel : le contenu du fichier de credentials est stocké
+                # directement dans une variable d'environnement (chaîne JSON).
+                cred_dict = json.loads(credentials_json)
+                cred = credentials.Certificate(cred_dict)
+            elif credentials_path:
+                # Cas local : on lit le fichier .json sur le disque.
+                cred = credentials.Certificate(credentials_path)
+            else:
+                raise ValueError(
+                    "FIREBASE_CREDENTIALS_JSON (Vercel) ou FIREBASE_CREDENTIALS_PATH (local) "
+                    "doit être défini"
+                )
             firebase_admin.initialize_app(cred, {"databaseURL": database_url})
 
         self.ref = db.reference("villes_communes")
