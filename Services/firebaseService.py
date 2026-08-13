@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import List
 from dotenv import load_dotenv
@@ -9,6 +10,21 @@ from firebase_admin import credentials, db
 from Classes.Classes import VilleCommune
 
 load_dotenv()
+
+
+def normaliser_cle_commune(commune: str) -> str:
+    """Transforme un nom de commune en clé Firebase stable et unique par ville,
+    peu importe la casse, les accents ou les espaces utilisés d'une écriture à
+    l'autre (Claude ne renvoie pas toujours exactement la même orthographe pour
+    la même ville, ex: 'Bouaké' / 'Bouake' / 'bouaké '). Sans ça, chaque petite
+    variation créait un NOUVEAU nœud Firebase au lieu de mettre à jour le bon."""
+    if not commune:
+        return "inconnue"
+    texte = unicodedata.normalize("NFKD", commune.strip())
+    texte = "".join(c for c in texte if not unicodedata.combining(c))  # retire les accents
+    texte = texte.lower()
+    texte = re.sub(r"[^a-z0-9]+", "_", texte).strip("_")
+    return texte or "inconnue"
 
 
 def score_vers_impact(score: int) -> str:
@@ -21,7 +37,7 @@ def score_vers_impact(score: int) -> str:
 
 
 _DUREE_PATTERN = re.compile(
-    r"(\d+(?:[.,]\d+)?)\s*(heures?|h|jours?|j|semaines?|sem|mois|ans?|ann[ée]es?)",
+    r"(\d+(?:[.,]\d+)?)\s*(minutes?|min|heures?|h|jours?|j|semaines?|sem|mois|ans?|ann[ée]es?)",
     re.IGNORECASE,
 )
 
@@ -43,6 +59,8 @@ def _duree_en_ms(duree: str | None):
     HEURE = 60 * MINUTE
     JOUR = 24 * HEURE
 
+    if unite.startswith("min"):
+        return valeur * MINUTE
     if unite.startswith("h"):
         return valeur * HEURE
     if unite.startswith("j"):
@@ -101,7 +119,8 @@ class FirebaseService:
         if expire_at:
             donnees["expire_at"] = expire_at
         donnees["updated_at"] = datetime.now(timezone.utc).isoformat()
-        self.ref.child(ville.commune).set(donnees)
+        cle_commune = normaliser_cle_commune(ville.commune)
+        self.ref.child(cle_commune).set(donnees)
 
     def enregistrer_plusieurs_villes(self, villes: List[VilleCommune]) -> None:
         for ville in villes:
@@ -190,13 +209,18 @@ class FirebaseService:
             "updated_at": horodatage,
         }
 
+        # Même clé normalisée que le pipeline automatique : une saisie manuelle
+        # pour "Bouaké" doit mettre à jour le même nœud que celui déjà créé
+        # par l'analyse automatique, pas en créer un nouveau.
+        cle_commune = normaliser_cle_commune(commune)
+
         # Historique : chaque saisie CRÉE une nouvelle entrée, elle ne
         # remplace jamais un événement précédent pour cette commune.
-        self.ref.child(commune).child("historique").push({
+        self.ref.child(cle_commune).child("historique").push({
             **donnees_courantes,
             "created_at": horodatage,
             "source": "manuel",
         })
 
         # État courant affiché dans le tableau du dashboard.
-        self.ref.child(commune).update(donnees_courantes)
+        self.ref.child(cle_commune).update(donnees_courantes)
