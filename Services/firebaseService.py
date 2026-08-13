@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import firebase_admin
 from firebase_admin import credentials, db
 from Classes.Classes import VilleCommune
+from Services.consequencesEvenement import analyser_consequence
 
 load_dotenv()
 
@@ -118,6 +119,14 @@ class FirebaseService:
         expire_at = calculer_expire_at(donnees.get("duree"))
         if expire_at:
             donnees["expire_at"] = expire_at
+        # Si Claude n'a pas rempli consequence/suggestion, on comble avec le
+        # dictionnaire de mots-clés (voir Services/consequencesEvenement.py).
+        if not donnees.get("consequence") or not donnees.get("suggestion"):
+            fallback = analyser_consequence(donnees.get("evenement", ""))
+            if not donnees.get("consequence"):
+                donnees["consequence"] = fallback["consequence"]
+            if not donnees.get("suggestion"):
+                donnees["suggestion"] = fallback["suggestion"]
         donnees["updated_at"] = datetime.now(timezone.utc).isoformat()
         cle_commune = normaliser_cle_commune(ville.commune)
         self.ref.child(cle_commune).set(donnees)
@@ -164,6 +173,9 @@ class FirebaseService:
                     pass  # format inattendu : on affiche quand même, au pire
 
             score = int(data.get("score_importance") or 0)
+            villes_voisines = data.get("villes_voisines_impactees") or []
+            if isinstance(villes_voisines, str):
+                villes_voisines = [v.strip() for v in villes_voisines.split(",") if v.strip()]
             tracked_zones.append({
                 "commune": data.get("commune", commune_key),
                 "region": data.get("region", "INCONNUE"),
@@ -172,6 +184,9 @@ class FirebaseService:
                 "expire_at": expire_at,
                 "score_importance": score,
                 "impact_mobilite": data.get("impact_mobilite") or score_vers_impact(score),
+                "consequence": data.get("consequence", ""),
+                "suggestion": data.get("suggestion", ""),
+                "villes_voisines_impactees": villes_voisines,
             })
 
         return {
@@ -199,6 +214,11 @@ class FirebaseService:
         expire_at_final = expire_at or calculer_expire_at(duree)
         horodatage = datetime.now(timezone.utc).isoformat()
 
+        # La saisie manuelle ne passe pas par Claude : on déduit la
+        # conséquence et la suggestion directement à partir du texte de
+        # l'événement tapé dans le formulaire.
+        fallback = analyser_consequence(evenement)
+
         donnees_courantes = {
             "commune": commune,
             "evenement": evenement,
@@ -206,6 +226,8 @@ class FirebaseService:
             "score_importance": score_importance,
             "impact_mobilite": score_vers_impact(score_importance),
             "expire_at": expire_at_final,
+            "consequence": fallback["consequence"],
+            "suggestion": fallback["suggestion"],
             "updated_at": horodatage,
         }
 

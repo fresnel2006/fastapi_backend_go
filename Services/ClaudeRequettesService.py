@@ -19,7 +19,18 @@ Format exact si un événement est détecté :
 {"chef_lieu":"","commune":"","departement":"","duree":"","evenement":"",
 "flux_entrant_avant_événement":"True/False","flux_sortant_apres_événement":"True/False",
 "impact_mobilite":"low/medium/high","region":"","score_confidence":0-100,
-"score_importance":0-100,"source":"","sous_prefecture":"","titre":""}
+"score_importance":0-100,"source":"","sous_prefecture":"","titre":"",
+"consequence":"","suggestion":"","villes_voisines_impactees":""}
+
+- "consequence" : une phrase courte et concrète décrivant l'effet réel sur la
+  circulation (ex: "fermeture de la voie principale reliant X à Y").
+- "suggestion" : une recommandation pratique et actionnable pour contourner
+  ou anticiper le problème (ex: "emprunter la voie secondaire par Z").
+- "villes_voisines_impactees" : liste des communes/départements voisins
+  susceptibles d'être touchés par ricochet (trafic dévié vers eux, afflux
+  reporté, etc.), sous forme de chaîne séparée par des virgules. Ne mentionne
+  que des communes explicitement identifiables comme voisines ou concernées
+  par le contexte de l'article ; n'invente rien.
 Si inconnu pour un champ : "aucune"/"aucun"."""
 
 
