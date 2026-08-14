@@ -83,6 +83,26 @@ def test_claude():
     return {"villes_detectees": villes}
 
 
+class TexteLibreRequest(BaseModel):
+    texte: str
+    utiliser_web: bool = False
+
+
+@router.post("/claude/test-texte")
+def test_claude_texte_libre(payload: TexteLibreRequest):
+    """Endpoint de test manuel : colle ton propre texte d'événement (article,
+    description, etc.) et Claude l'analyse. Rien n'est enregistré dans Firebase,
+    ça sert juste à vérifier le JSON que Claude renverrait (durée incluse)."""
+    if not payload.texte.strip():
+        raise HTTPException(status_code=400, detail="Le champ 'texte' est vide.")
+
+    villes = requete_analyse_villes(payload.texte, utiliser_web=payload.utiliser_web)
+    return {
+        "nombre_evenements_detectes": len(villes),
+        "villes_detectees": villes
+    }
+
+
 # ----------------------------------------------------------------------
 # Routes consommées par le dashboard React GvipRiskDashboard
 # ----------------------------------------------------------------------
@@ -115,3 +135,35 @@ def enregistrer_evenement_manuel(payload: SaisieManuelleRequest):
         expire_at=payload.expire_at,
     )
     return {"message": "Événement enregistré", "commune": payload.ville_ou_commune}
+
+
+class TexteLibreRequest(BaseModel):
+    texte: str
+    utiliser_web: bool = False
+
+
+@router.post("/api/evenements/texte-libre")
+def analyser_et_enregistrer_texte_libre(payload: TexteLibreRequest):
+    """Saisie libre depuis le dashboard : l'utilisateur colle un texte
+    d'événement (article, description...), Claude l'analyse (une ou
+    plusieurs communes possibles, durée incluse) et le résultat est
+    enregistré direct dans Firebase, comme le pipeline automatique."""
+    if not payload.texte.strip():
+        raise HTTPException(status_code=400, detail="Le champ 'texte' est vide.")
+
+    villes = requete_analyse_villes(payload.texte, utiliser_web=payload.utiliser_web)
+
+    if not villes:
+        return {
+            "message": "Aucun événement lié à la mobilité détecté dans ce texte.",
+            "nombre_evenements_detectes": 0,
+            "villes_detectees": []
+        }
+
+    firebase_service.enregistrer_plusieurs_villes(villes)
+
+    return {
+        "message": "Événement(s) analysé(s) et enregistré(s).",
+        "nombre_evenements_detectes": len(villes),
+        "villes_detectees": villes
+    }
