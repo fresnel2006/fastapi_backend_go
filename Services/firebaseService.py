@@ -111,6 +111,11 @@ class FirebaseService:
 
         self.ref = db.reference("villes_communes")
 
+    # Pourcentage du score de l'événement principal attribué aux communes
+    # voisines impactées par ricochet (trafic dévié, affluence reportée...).
+    FACTEUR_IMPACT_INDIRECT = 0.6
+    SCORE_INDIRECT_MINIMUM = 10
+
     def enregistrer_ville(self, ville: VilleCommune) -> None:
         """Écrit l'état courant d'une commune (pipeline automatique News+Claude).
         Calcule aussi expire_at à partir de la durée détectée, pour que le
@@ -128,8 +133,62 @@ class FirebaseService:
             if not donnees.get("suggestion"):
                 donnees["suggestion"] = fallback["suggestion"]
         donnees["updated_at"] = datetime.now(timezone.utc).isoformat()
+        donnees["impact_indirect"] = False
         cle_commune = normaliser_cle_commune(ville.commune)
         self.ref.child(cle_commune).set(donnees)
+
+        # Propage un score d'impact réduit aux communes/départements voisins
+        # susceptibles d'être touchés par ricochet, pour qu'ils apparaissent
+        # eux aussi dans le tableau du dashboard avec leur propre score.
+        if ville.villes_voisines_impactees:
+            self._enregistrer_impact_indirect(ville, donnees)
+
+    def _enregistrer_impact_indirect(self, ville: VilleCommune, donnees_principales: dict) -> None:
+        score_principal = int(donnees_principales.get("score_importance") or 0)
+        score_voisin = max(
+            self.SCORE_INDIRECT_MINIMUM,
+            round(score_principal * self.FACTEUR_IMPACT_INDIRECT),
+        )
+        expire_at = donnees_principales.get("expire_at")
+        horodatage = datetime.now(timezone.utc).isoformat()
+        cle_commune_principale = normaliser_cle_commune(ville.commune)
+
+        for nom_voisin in ville.villes_voisines_impactees:
+            cle_voisine = normaliser_cle_commune(nom_voisin)
+            if not nom_voisin or cle_voisine == cle_commune_principale:
+                continue  # évite l'auto-référencement
+
+            existant = self.ref.child(cle_voisine).get() or {}
+            # Ne jamais dégrader un événement DIRECT déjà enregistré pour
+            # cette commune avec un score plus élevé (l'impact indirect ne
+            # doit pas écraser un vrai événement local plus important).
+            if (
+                existant
+                and not existant.get("impact_indirect", False)
+                and int(existant.get("score_importance") or 0) >= score_voisin
+            ):
+                continue
+
+            donnees_voisines = {
+                "commune": nom_voisin,
+                "region": ville.region or "INCONNUE",
+                "evenement": f"Effet indirect : {ville.evenement} ({ville.commune})",
+                "duree": donnees_principales.get("duree", ""),
+                "expire_at": expire_at,
+                "score_importance": score_voisin,
+                "impact_mobilite": score_vers_impact(score_voisin),
+                "consequence": (
+                    f"Risque de trafic dévié ou d'affluence reportée en provenance de "
+                    f"{ville.commune}."
+                ),
+                "suggestion": ville.suggestion
+                or "Prévoir un itinéraire alternatif, la zone peut être affectée indirectement.",
+                "villes_voisines_impactees": [],
+                "impact_indirect": True,
+                "commune_source": ville.commune,
+                "updated_at": horodatage,
+            }
+            self.ref.child(cle_voisine).set(donnees_voisines)
 
     def enregistrer_plusieurs_villes(self, villes: List[VilleCommune]) -> None:
         for ville in villes:
@@ -187,6 +246,10 @@ class FirebaseService:
                 "consequence": data.get("consequence", ""),
                 "suggestion": data.get("suggestion", ""),
                 "villes_voisines_impactees": villes_voisines,
+                # Distingue un événement direct d'un effet de ricochet propagé
+                # depuis une commune voisine (score réduit, voir commune_source).
+                "impact_indirect": bool(data.get("impact_indirect", False)),
+                "commune_source": data.get("commune_source"),
             })
 
         return {
