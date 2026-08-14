@@ -31,7 +31,23 @@ Format exact si un événement est détecté :
   reporté, etc.), sous forme de chaîne séparée par des virgules. Ne mentionne
   que des communes explicitement identifiables comme voisines ou concernées
   par le contexte de l'article ; n'invente rien.
-Si inconnu pour un champ : "aucune"/"aucun"."""
+- "duree" : TOUJOURS essayer de donner une durée exploitable au format
+  "<nombre> <unité>" (minutes/heures/jours/semaines/mois), car ce champ sert
+  à calculer un compte à rebours. Ne réponds "aucune" QUE si le texte ne
+  donne vraiment aucun indice temporel, direct ou indirect. Sinon, déduis
+  une estimation raisonnable à partir des indices disponibles :
+  - Durée explicite ("pendant 3 jours", "environ 6 heures") → reprends-la
+    telle quelle au format "<nombre> <unité>".
+  - Expression vague ("quelques heures", "toute la journée", "le temps des
+    travaux") → convertis en estimation numérique plausible (ex: "quelques
+    heures" → "3 heures", "toute la journée" → "12 heures", "ce week-end"
+    → "2 jours").
+  - Événement récurrent/coutumier sans durée donnée (grève, manifestation,
+    funérailles, fête) → utilise une durée typique pour ce type d'événement
+    en Côte d'Ivoire (ex: manifestation/grève ponctuelle → "1 jour",
+    travaux routiers sans date de fin → "1 semaine").
+  - Uniquement si aucun de ces indices n'existe : réponds "aucune".
+Pour les autres champs, si inconnu : "aucune"/"aucun"."""
 
 
 def requete_analyse_villes(description: str, utiliser_web: bool = False) -> List[VilleCommune]:

@@ -36,11 +36,13 @@ class VilleCommune(BaseModel):
             return valeur.lower() == "true"
         return valeur
 
-    @field_validator("consequence", "suggestion", mode="before")
+    @field_validator("consequence", "suggestion", "duree", mode="before")
     @classmethod
     def nettoyer_texte_libre(cls, valeur):
         """Claude renvoie parfois 'aucune'/'aucun' quand il ne sait pas :
-        on normalise ça en chaîne vide pour laisser place au fallback."""
+        on normalise ça en chaîne vide pour laisser place au fallback (et,
+        pour "duree", pour que le frontend affiche "—" au lieu du mot
+        "aucune" au lieu d'un vrai compte à rebours)."""
         if isinstance(valeur, str) and valeur.strip().lower() in ("aucune", "aucun", ""):
             return ""
         return valeur or ""
